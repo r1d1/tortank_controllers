@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import argparse
 import rospy
 from std_msgs.msg import Empty
 from sensor_msgs.msg import LaserScan
@@ -15,9 +16,12 @@ except ImportError:
 
 
 class BasicController:
-    def __init__(self):
+    def __init__(self, plot):
         self.command_period = 0.1 # seconds
-        self.min_dist = 0.3
+        self.min_dist = 0.2
+        self.plot = plot
+        self.vx = 0.0
+        self.wz = 0.0
         self.laser_sub = rospy.Subscriber('scan', LaserScan, self.laser_cb)
         self.stop_sub = rospy.Subscriber('stop_robot', Empty, self.stop_cb)
         self.command_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
@@ -38,27 +42,41 @@ class BasicController:
     def laser_cb(self, msg):
         # store and process data
         self.distances = msg.ranges[270:360]+msg.ranges[0:90]
-
+        proximities = [2.0*self.f_proximity((x_-self.min_dist)) for x_ in self.distances]
+        influence = [self.sigmoid(2.0*(x_-1.0)) for x_ in proximities]
+        projection_x = [x_*np.cos(-alpha_*np.pi/180.0) for x_,alpha_ in zip(influence, np.concatenate((np.arange(270,360), np.arange(0,90))))]
+        projection_y = [x_*np.sin(alpha_*np.pi/180.0) for x_,alpha_ in zip(influence, np.concatenate((np.arange(270,360), np.arange(0,90))))]
         # divide by control period to get speed
         self.motors['l'] = np.dot(self.distances, self.weights['l']) #0.1+0.24*0.1*
         self.motors['r'] = np.dot(self.distances, self.weights['r']) #0.1+0.24*0.1*
         #plt.plot([self.motors['r'] if i < 90 else self.motors['l'] for i in np.arange(180)])
-        if matplotlib_available :
+        self.vx=0.25-np.sum(projection_x)/180.
+        self.wz=self.wz=-np.sum(projection_y)/180.
+
+        if matplotlib_available and self.plot:
             plt.cla()
-            plt.plot(self.distances, 'ko')
+            plt.plot(self.distances, 'ko', label='distance')
             #plt.plot([self.sigmoid(x_)-0.5 for x_ in self.distances], 'o')
-            plt.plot([2.0*self.f_proximity(x_-self.min_dist) for x_ in self.distances], 'o')
+            plt.plot(proximities, 'o', label='prox')
+            plt.plot(influence, 'ro', label='influence')
+            plt.plot(projection_x, 'm', label='proj_x')
+            plt.plot(projection_y, 'c', label='proj_y')
             #plt.plot(self.weights['r'], 'b')
             #plt.plot(self.weights['l'], 'r')
+
+            plt.arrow(90.,1.,0.0,1.0)
+
+            plt.legend()
             plt.draw()
             plt.pause(0.01)
     
     def timer_cb(self, event):
         # update speed
-        #print('timer')
-        #print(self.motors)
-        msg = Twist()
-        self.command_pub.publish(msg)
+        msg_ = Twist()
+        msg_.linear.x = self.vx
+        msg_.angular.z = self.wz
+        self.command_pub.publish(msg_)
+        pass
 
     def stop_cb(self,msg):
         print("stop cb")
@@ -70,8 +88,14 @@ class BasicController:
 if __name__ == "__main__":
     rospy.init_node('tortank')
     
-    ctrl = BasicController()
-    if matplotlib_available :
+    # get path from options:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--plot", action="store_true", default=False)
+    args=parser.parse_args()
+    print(args)
+
+    ctrl = BasicController(args.plot)
+    if matplotlib_available and args.plot:
         plt.ion()
         plt.show()
     rospy.spin()
