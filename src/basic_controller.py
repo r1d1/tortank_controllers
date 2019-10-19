@@ -50,7 +50,7 @@ class BasicController:
         self.motors['l'] = np.dot(self.distances, self.weights['l']) #0.1+0.24*0.1*
         self.motors['r'] = np.dot(self.distances, self.weights['r']) #0.1+0.24*0.1*
         #plt.plot([self.motors['r'] if i < 90 else self.motors['l'] for i in np.arange(180)])
-        self.vx=0.25-np.sum(projection_x)/180.
+        self.vx=0.5-np.sum(projection_x)/180.
         self.wz=self.wz=-np.sum(projection_y)/180.
 
         if matplotlib_available and self.plot:
