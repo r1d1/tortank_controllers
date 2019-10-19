@@ -26,7 +26,8 @@ class BasicController:
         self.stop_sub = rospy.Subscriber('stop_robot', Empty, self.stop_cb)
         self.command_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
         self.timer = rospy.Timer(rospy.Duration(self.command_period), self.timer_cb)
-        
+        self.ride = True
+
         self.distances = None
         self.factors = {'r': [-0.05 * x for x in np.linspace(-90,90, num=180)], 'l': [0.05 * x for x in np.linspace(-90,90, num=180)]}
         print(self.factors['r'] / np.linalg.norm(self.factors['r']))
@@ -50,7 +51,7 @@ class BasicController:
         self.motors['l'] = np.dot(self.distances, self.weights['l']) #0.1+0.24*0.1*
         self.motors['r'] = np.dot(self.distances, self.weights['r']) #0.1+0.24*0.1*
         #plt.plot([self.motors['r'] if i < 90 else self.motors['l'] for i in np.arange(180)])
-        self.vx=0.5-np.sum(projection_x)/180.
+        self.vx=0.35-np.sum(projection_x)/180.
         self.wz=self.wz=-np.sum(projection_y)/180.
 
         if matplotlib_available and self.plot:
@@ -73,18 +74,27 @@ class BasicController:
     def timer_cb(self, event):
         # update speed
         msg_ = Twist()
-        msg_.linear.x = self.vx
-        msg_.angular.z = self.wz
+        msg_.linear.x = self.vx if self.ride else 0.0
+        msg_.angular.z = self.wz if self.ride else 0.0
         self.command_pub.publish(msg_)
         pass
 
     def stop_cb(self,msg):
         print("stop cb")
+        self.ride = not self.ride
         msg_ = Twist()
         msg_.linear.x = 0.0
         msg_.angular.z = 0.0
         self.command_pub.publish(msg_)
     
+    def __del__(self):
+        print("destructor")
+        self.ride = False 
+        msg_ = Twist()
+        msg_.linear.x = 0.0
+        msg_.angular.z = 0.0
+        self.command_pub.publish(msg_)
+
 if __name__ == "__main__":
     rospy.init_node('tortank')
     
